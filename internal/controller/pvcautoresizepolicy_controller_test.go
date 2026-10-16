@@ -32,9 +32,7 @@ import (
 
 var _ = Describe("PVCAutoResizePolicy Controller", func() {
 	Context("When reconciling a resource", func() {
-		const (
-			resourceName = "test-resource"
-		)
+		const resourceName = "test-resource"
 
 		ctx := context.Background()
 
@@ -60,7 +58,6 @@ var _ = Describe("PVCAutoResizePolicy Controller", func() {
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &autoresizev1alpha1.PVCAutoResizePolicy{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
@@ -68,19 +65,30 @@ var _ = Describe("PVCAutoResizePolicy Controller", func() {
 			By("Cleanup the specific resource instance PVCAutoResizePolicy")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
-		It("should successfully reconcile the resource", func() {
+
+		It("should trigger the runner on reconcile", func() {
 			By("Reconciling the created resource")
+			resizer := NewRunner(k8sClient, 0, false)
 			controllerReconciler := &PVCAutoResizePolicyReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
+				Runner: resizer,
 			}
 
+			// Reconcile should trigger the runner.
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+			Expect(resizer.trigger).To(HaveLen(1))
+
+			// Multiple reconciles should not queue more objects.
+			// Or, should not get blocked if channel is full.
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resizer.trigger).To(HaveLen(1))
 		})
 	})
 })

@@ -22,42 +22,47 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	autoresizev1alpha1 "github.com/csi-addons/pvc-autoresizer/api/v1alpha1"
 )
 
-// PVCAutoResizePolicyReconciler reconciles a PVCAutoResizePolicy object
+// PVCAutoResizePolicyReconciler watches PVCAutoResizePolicy objects and signals the
+// pvcautoresizepolicy "runner" to evaluate policies early on create/update,
+// instead of waiting for the entire periodic tick duration.
 type PVCAutoResizePolicyReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	Runner *Runner
 }
 
-// +kubebuilder:rbac:groups=autoresize.csiaddons.openshift.io,resources=pvcautoresizepolicies,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=autoresize.csiaddons.openshift.io,resources=pvcautoresizepolicies/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=autoresize.csiaddons.openshift.io,resources=pvcautoresizepolicies/finalizers,verbs=update
-
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the PVCAutoResizePolicy object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.25.0/pkg/reconcile
 func (r *PVCAutoResizePolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	logger := log.FromContext(ctx).WithName("pvcautoresizepolicy")
+	logger.Info("PVCAutoResizePolicy changed, triggering early runner tick", "name", req.Name)
 
-	// TODO(user): your logic here
+	if r.Runner != nil {
+		r.Runner.Trigger()
+	}
 
 	return ctrl.Result{}, nil
+}
+
+var createOrSpecUpdatePredicate = predicate.Funcs{
+	CreateFunc: func(_ event.CreateEvent) bool { return true },
+	UpdateFunc: func(e event.UpdateEvent) bool {
+		return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration()
+	},
+	DeleteFunc:  func(_ event.DeleteEvent) bool { return false },
+	GenericFunc: func(_ event.GenericEvent) bool { return false },
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *PVCAutoResizePolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&autoresizev1alpha1.PVCAutoResizePolicy{}).
+		WithEventFilter(createOrSpecUpdatePredicate).
 		Named("pvcautoresizepolicy").
 		Complete(r)
 }

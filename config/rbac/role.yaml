@@ -5,12 +5,19 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - autoresize.csiaddons.openshift.io
+  - ""
   resources:
-  - pvcautoresizepolicies
+  - namespaces
+  - resourcequotas
   verbs:
-  - create
-  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  verbs:
   - get
   - list
   - patch
@@ -19,9 +26,13 @@ rules:
 - apiGroups:
   - autoresize.csiaddons.openshift.io
   resources:
-  - pvcautoresizepolicies/finalizers
+  - pvcautoresizepolicies
   verbs:
+  - get
+  - list
+  - patch
   - update
+  - watch
 - apiGroups:
   - autoresize.csiaddons.openshift.io
   resources:
@@ -30,3 +41,19 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - quota.openshift.io
+  resources:
+  - clusterresourcequotas
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+  - get
+  - list
+  - watch
