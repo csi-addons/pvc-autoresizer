@@ -239,11 +239,12 @@ spec:
                 type: integer
               phase:
                 description: Phase indicates the policy state (e.g. Ready, Suspended,
-                  Duplicate).
+                  Duplicate, Error).
                 enum:
                 - Ready
                 - Suspended
                 - Duplicate
+                - Error
                 type: string
             type: object
         required:

@@ -26,7 +26,7 @@ import (
 var _ = Describe("Runner", func() {
 	Describe("Trigger", func() {
 		It("never blocks, even when called repeatedly", func() {
-			r := NewRunner(k8sClient, time.Hour, false)
+			r := NewRunner(k8sClient, time.Hour, false, "test-namespace")
 
 			done := make(chan struct{})
 			go func() {
@@ -44,7 +44,7 @@ var _ = Describe("Runner", func() {
 		})
 
 		It("coalesces multiple calls into a single pending signal", func() {
-			r := NewRunner(k8sClient, time.Hour, false)
+			r := NewRunner(k8sClient, time.Hour, false, "test-namespace")
 			Expect(r.trigger).To(BeEmpty())
 
 			r.Trigger()

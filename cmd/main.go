@@ -32,6 +32,7 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/discovery"
@@ -47,6 +48,7 @@ import (
 
 	autoresizev1alpha1 "github.com/csi-addons/pvc-autoresizer/api/v1alpha1"
 	"github.com/csi-addons/pvc-autoresizer/internal/controller"
+	"github.com/csi-addons/pvc-autoresizer/internal/utils"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -94,6 +96,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	operatorNamespace, err := utils.GetOperatorNamespace()
+	if err != nil {
+		setupLog.Error(err, "Failed to get operator namespace")
+		os.Exit(1)
+	}
+	setupLog.Info("Operator namespace", "namespace", operatorNamespace)
+
 	cfg := ctrl.GetConfigOrDie()
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme,
@@ -103,51 +112,7 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "91e00fff.csiaddons.openshift.io",
-		Cache: cache.Options{
-			ByObject: map[client.Object]cache.ByObject{
-				// Cache only required PVC fields.
-				&corev1.PersistentVolumeClaim{}: {
-					Transform: func(obj any) (any, error) {
-						pvc := obj.(*corev1.PersistentVolumeClaim)
-						return &corev1.PersistentVolumeClaim{
-							ObjectMeta: metav1.ObjectMeta{
-								Name:            pvc.Name,
-								Namespace:       pvc.Namespace,
-								ResourceVersion: pvc.ResourceVersion,
-								UID:             pvc.UID,
-								Labels:          pvc.Labels,
-								Annotations:     pvc.Annotations,
-							},
-							Spec: corev1.PersistentVolumeClaimSpec{
-								StorageClassName: pvc.Spec.StorageClassName,
-								Resources:        pvc.Spec.Resources,
-								AccessModes:      pvc.Spec.AccessModes,
-								VolumeName:       pvc.Spec.VolumeName,
-							},
-							Status: corev1.PersistentVolumeClaimStatus{
-								Capacity:   pvc.Status.Capacity,
-								Conditions: pvc.Status.Conditions,
-								Phase:      pvc.Status.Phase,
-							},
-						}, nil
-					},
-				},
-				// Cache only required Namespace fields.
-				&corev1.Namespace{}: {
-					Transform: func(obj any) (any, error) {
-						ns := obj.(*corev1.Namespace)
-						return &corev1.Namespace{
-							ObjectMeta: metav1.ObjectMeta{
-								Name:            ns.Name,
-								ResourceVersion: ns.ResourceVersion,
-								UID:             ns.UID,
-								Labels:          ns.Labels,
-							},
-						}, nil
-					},
-				},
-			},
-		},
+		Cache:                  getCacheOptions(operatorNamespace),
 	})
 	if err != nil {
 		setupLog.Error(err, "Failed to start manager")
@@ -161,7 +126,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	resizer := controller.NewRunner(mgr.GetClient(), pollingInterval, hasCRQ)
+	resizer := controller.NewRunner(mgr.GetClient(), pollingInterval, hasCRQ, operatorNamespace)
 	if err := mgr.Add(resizer); err != nil {
 		setupLog.Error(err, "Failed to add PVC autoresize runner")
 		os.Exit(1)
@@ -193,16 +158,77 @@ func main() {
 	}
 }
 
+func getCacheOptions(operatorNamespace string) cache.Options {
+	return cache.Options{
+		ByObject: map[client.Object]cache.ByObject{
+			// Cache only a single required ConfigMap.
+			&corev1.ConfigMap{}: {
+				Namespaces: map[string]cache.Config{
+					operatorNamespace: {},
+				},
+				Field: fields.SelectorFromSet(fields.Set{
+					"metadata.name": utils.ConfigMapName,
+				}),
+			},
+			// Cache only required PVC fields.
+			&corev1.PersistentVolumeClaim{}: {
+				Transform: func(obj any) (any, error) {
+					pvc := obj.(*corev1.PersistentVolumeClaim)
+					return &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:            pvc.Name,
+							Namespace:       pvc.Namespace,
+							ResourceVersion: pvc.ResourceVersion,
+							UID:             pvc.UID,
+							Labels:          pvc.Labels,
+							Annotations:     pvc.Annotations,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							StorageClassName: pvc.Spec.StorageClassName,
+							Resources:        pvc.Spec.Resources,
+							AccessModes:      pvc.Spec.AccessModes,
+							VolumeName:       pvc.Spec.VolumeName,
+						},
+						Status: corev1.PersistentVolumeClaimStatus{
+							Capacity:   pvc.Status.Capacity,
+							Conditions: pvc.Status.Conditions,
+							Phase:      pvc.Status.Phase,
+						},
+					}, nil
+				},
+			},
+			// Cache only required Namespace fields.
+			&corev1.Namespace{}: {
+				Transform: func(obj any) (any, error) {
+					ns := obj.(*corev1.Namespace)
+					return &corev1.Namespace{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:            ns.Name,
+							ResourceVersion: ns.ResourceVersion,
+							UID:             ns.UID,
+							Labels:          ns.Labels,
+						},
+					}, nil
+				},
+			},
+		},
+	}
+}
+
 // setupInformers checks for the ClusterResourceQuota API availability and registers cache informers early.
 // ClusterResourceQuota is usually only available on OpenShift clusters (not a generic K8s resource).
 func setupInformers(ctx context.Context, mgr ctrl.Manager, cfg *rest.Config) (bool, error) {
 	mgrCache := mgr.GetCache()
 	objects := []client.Object{
+		// Only required PVC fields, using cache options.
 		&corev1.PersistentVolumeClaim{},
 		&autoresizev1alpha1.PVCAutoResizePolicy{},
+		// Only required Namespace fields, using cache options.
 		&corev1.Namespace{},
 		&corev1.ResourceQuota{},
 		&storagev1.StorageClass{},
+		// Only a single operator config ConfigMap, using cache options.
+		&corev1.ConfigMap{},
 	}
 	for _, obj := range objects {
 		if _, err := mgrCache.GetInformer(ctx, obj); err != nil {
