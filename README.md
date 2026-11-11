@@ -1,8 +1,79 @@
 # pvc-autoresizer
-// TODO(user): Add simple overview of use/purpose
+Automating PersistentVolumeClaim (PVC) expansion by periodically monitoring and resizing based on capacity or number of inodes usage.
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+Please refer [docs/resizer-design.md](./docs/resizer-design.md) for more details.
+
+## Usage
+To periodically monitor and automatically resize PersistentVolumeClaim(s), when the used capacity or inodes exceeds certain threshold (configurable), create a PVCAutoResizePolicy custom resource.
+
+### Example
+
+```yaml
+apiVersion: autoresize.csiaddons.openshift.io/v1alpha1
+kind: PVCAutoResizePolicy
+metadata:
+  name: example-policy
+spec:
+  # Target PVC(s) using this provisioner (CSI driver)
+  provisioner: ebs.csi.aws.com
+  
+  # Suspend auto-expansion for all targeted PVC(s)
+  suspend: false
+  
+  # Target specific Namespace(s) and PVC(s)
+  selectors:
+    namespace:
+      labelSelector:
+        matchLabels:
+          environment: production
+      nameRegexSelector: "^prod-.*"
+    persistentVolumeClaim:
+      labelSelector:
+        matchLabels:
+          auto-resize: "true"
+      nameRegexSelector: "^data-.*"
+  
+  # Configure expansion thresholds and behavior
+  expansionThresholds:
+    # Trigger expansion when disk usage reaches 80%
+    usagePercentage: 80
+    
+    # Trigger expansion when inode usage reaches 80%
+    usageInodePercentage: 80
+    
+    # Increase size by 10% of current capacity
+    increasePercentage: 10
+    
+    # Or use absolute increment (takes precedence over increasePercentage)
+    # increaseAbsolute: 50Gi
+    
+    # Set maximum capacity limit
+    maxCapacity: 2Ti
+```
+
+### Configuration Fields
+
+| Field | Description | Default Value | Required |
+|-------|-------------|---------------|----------|
+| `spec.provisioner` | CSI driver name (e.g., `ebs.csi.aws.com`, `pd.csi.storage.gke.io`). Targets PVCs using this provisioner. **Immutable after creation.** | - | Yes |
+| `spec.suspend` | Pause auto-expansion for all targeted PVCs | `false` | No |
+| `spec.selectors.namespace.labelSelector` | Kubernetes label selector for Namespaces | All Namespaces | No |
+| `spec.selectors.namespace.nameRegexSelector` | Regular expression to match Namespace names | All Namespaces | No |
+| `spec.selectors.persistentVolumeClaim.labelSelector` | Kubernetes label selector for PVCs | All PVCs | No |
+| `spec.selectors.persistentVolumeClaim.nameRegexSelector` | Regular expression to match PVC names | All PVCs | No |
+| `spec.expansionThresholds.usagePercentage` | Disk space usage percentage (1-100) that triggers expansion | `80` | No |
+| `spec.expansionThresholds.usageInodePercentage` | Inode usage percentage (1-100) that triggers expansion | `80` | No |
+| `spec.expansionThresholds.increasePercentage` | Percentage (1-100) to increase current size by | `10` | No |
+| `spec.expansionThresholds.increaseAbsolute` | Absolute storage quantity to add (e.g., `50Gi`, `100Gi`). **Takes precedence over `increasePercentage` when set.** | Not set | No |
+| `spec.expansionThresholds.maxCapacity` | Maximum allowed capacity limit (e.g., `2Ti`, `5Ti`) | No limit | No |
+
+### Status Fields
+
+| Field | Description | Values |
+|-------|-------------|--------|
+| `status.matchedPVCsCount` | Total number of PVCs currently targeted by this policy | Integer (count) |
+| `status.phase` | Current state of the policy | `Ready` - Policy is active and monitoring PVCs<br>`Suspended` - Policy is paused (via `spec.suspend: true`)<br>`Duplicate` - Multiple policies target the same PVC(s) |
 
 ## Getting Started
 
