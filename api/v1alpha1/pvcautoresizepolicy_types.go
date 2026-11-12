@@ -118,9 +118,9 @@ type PVCAutoResizePolicyStatus struct {
 	// +optional
 	MatchedPVCsCount int32 `json:"matchedPVCsCount,omitempty"`
 
-	// Phase indicates the policy state (e.g. Ready, Suspended, Duplicate).
+	// Phase indicates the policy state (e.g. Ready, Suspended, Duplicate, Error).
 	// +optional
-	// +kubebuilder:validation:Enum=Ready;Suspended;Duplicate
+	// +kubebuilder:validation:Enum=Ready;Suspended;Duplicate;Error
 	Phase string `json:"phase,omitempty"`
 }
 

@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pvc-autoresizer-config
+  namespace: pvc-autoresizer-system
+data:
+  config.yaml: |
+    metrics-source:
+      # Required if use-k8s-metrics-api is false
+      # URL of the Prometheus server
+      # Examples:
+      #   - HTTP: "http://prometheus-k8s.monitoring.svc:9090"
+      #   - HTTPS with public cert: "https://prometheus.example.com"
+      #   - HTTPS with internal CA: "https://prometheus-k8s.monitoring.svc:9091" (requires prometheus-ca-bundle-path)
+      prometheus-url: "http://prometheus-k8s.monitoring.svc:9090"
+
+      # Optional
+      # Path to the CA certificate bundle for Prometheus
+      # If empty:
+      #   - http URLs: no TLS, CA bundle not used
+      #   - https URLs: system CA pool is used (for publicly signed certificates)
+      # If set:
+      #   - https URLs: custom CA bundle is used (for self-signed/internal CAs)
+      prometheus-ca-bundle-path: "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
+
+      # Optional
+      # Path to a file containing a bearer token
+      # For authenticating with Prometheus (e.g., a ServiceAccount token)
+      prometheus-bearer-token-path: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+      # Default: false
+      # To use the Kubernetes Metrics API instead of Prometheus
+      use-k8s-metrics-api: false
+
+      # Optional
+      # Custom metric queries for a specific provisioner
+      provisioners:
+        # Example: Custom metrics for a specific provisioner (e.g., VMs based)
+        # rook-ceph.rbd.csi.ceph.com:
+        #   metrics-available-bytes-query: 'custom_vm_volume_available_bytes'
+        #   metrics-capacity-bytes-query: 'custom_vm_volume_capacity_bytes'
+        #   metrics-inodes-free-query: 'custom_vm_volume_inodes_free'
+        #   metrics-inodes-query: 'custom_vm_volume_inodes'

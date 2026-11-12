@@ -66,6 +66,11 @@ spec:
           - --polling-interval=10m
         image: controller:latest
         name: manager
+        env:
+        - name: OPERATOR_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         ports:
         - containerPort: 8081
           name: health

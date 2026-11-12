@@ -68,7 +68,7 @@ var _ = Describe("PVCAutoResizePolicy Controller", func() {
 
 		It("should trigger the runner on reconcile", func() {
 			By("Reconciling the created resource")
-			resizer := NewRunner(k8sClient, 0, false)
+			resizer := NewRunner(k8sClient, 0, false, "test-namespace")
 			controllerReconciler := &PVCAutoResizePolicyReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
